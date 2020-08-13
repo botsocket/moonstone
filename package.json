@@ -1,0 +1,47 @@
+{
+    "name": "@botbind/nebula",
+    "version": "1.0.0",
+    "description": "A simple yet powerful Discord framework for building scalable bot applications",
+    "main": "src/index.js",
+    "types": "src/index.d.ts",
+    "files": [
+        "src"
+    ],
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/botbind/nebula.git"
+    },
+    "author": "Bot Bind's Team",
+    "license": "MIT",
+    "bugs": {
+        "url": "https://github.com/botbind/nebula/issues"
+    },
+    "homepage": "https://github.com/botbind/nebula#readme",
+    "scripts": {
+        "lint": "eslint . --report-unused-disable-directives && echo \"No errors found\"",
+        "lint:fix": "eslint . --fix && echo \"No errors found\"",
+        "test": "jest --coverage && tsc && npm run lint && echo \"No errors found\"",
+        "test:e2e": "nodemon tests/e2e",
+        "test:watch": "jest --watchAll"
+    },
+    "devDependencies": {
+        "@hapi/eslint-plugin-hapi": "^4.3.5",
+        "dotenv": "^8.2.0",
+        "eslint": "^6.8.0",
+        "jest": "^25.1.0",
+        "nock": "^13.0.2",
+        "nodemon": "^2.0.4",
+        "typescript": "^3.8.3"
+    },
+    "dependencies": {
+        "@botbind/constellation": "^7.0.1",
+        "@botbind/dust": "^14.0.0",
+        "@botbind/lyra": "^3.0.2",
+        "@botbind/radar": "^1.0.0",
+        "@botbind/template": "^5.0.1",
+        "ws": "^7.3.1"
+    },
+    "engines": {
+        "node": ">=12.0.0"
+    }
+}

@@ -1,0 +1,16 @@
+{
+    "compilerOptions": {
+        "module": "commonjs",
+        "noEmit": true,
+        "lib": [
+            "es6"
+        ],
+        "forceConsistentCasingInFileNames": true,
+        "strict": true,
+        "noErrorTruncation": true,
+        "baseUrl": "."
+    },
+    "exclude": [
+        "node_modules"
+    ]
+}

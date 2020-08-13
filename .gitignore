@@ -1,0 +1,11 @@
+.vs
+.vscode
+
+node_modules
+coverage
+dist
+
+package-lock.json
+.eslintcache
+.DS_STORE
+.env
