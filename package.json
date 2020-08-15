@@ -37,7 +37,7 @@
         "@botbind/constellation": "^7.0.1",
         "@botbind/dust": "^14.0.0",
         "@botbind/lyra": "^3.0.2",
-        "@botbind/radar": "^1.0.0",
+        "@botbind/radar": "^1.1.0",
         "@botbind/template": "^5.0.1",
         "ws": "^7.3.1"
     },
