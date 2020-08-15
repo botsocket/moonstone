@@ -74,7 +74,6 @@ module.exports = class {
         // Register gateway events
 
         if (this.gateway) {
-
             this.gateway.events.on('open', () => {
 
                 this.events.emit('debug', { type: 'info', message: `Gateway opened for shard ${this.gateway._shardId}` });
