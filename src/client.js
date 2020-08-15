@@ -46,11 +46,6 @@ module.exports = class {
 
     stop() {
 
-        if (this._settings.debug) {
-
-
-        }
-
         if (this.gateway) {
             return this.gateway.stop();
         }
