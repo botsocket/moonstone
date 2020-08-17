@@ -21,21 +21,22 @@ module.exports = class {
             },
         });
 
-        this.gateway = null;
+        this.gateway = new Gateway(this);
         this.events = new Events.EventEmitter();
 
         this._debug();
+        this._initialize();
     }
 
     async start() {
 
-        // Shard if specified
+        //  Shard if specified
 
         if (this._settings.gateway) {
-            return this._start(this._settings.gateway);
+            return this.gateway._start(this._settings.gateway);
         }
 
-        // Start single shard
+        // Single shard
 
         const response = await this._radar.get('/api/v6/gateway');
 
@@ -43,22 +44,12 @@ module.exports = class {
             throw new Error(`Sever responded with code ${response.statusCode} - ${response.statusMessage}`);
         }
 
-        const options = response.payload;
-        options.shard = [0, 1];
-
-        return this._start(options);
+        return this.gateway._start(response.payload);
     }
 
     stop() {
 
-        if (this.gateway) {
-            return new Promise((resolve) => {
-
-                this.gateway._stop(resolve);
-            });
-        }
-
-        return Promise.resolve();
+        return this.gateway._stop();
     }
 
     log(type, message) {
@@ -78,31 +69,16 @@ module.exports = class {
         }
     }
 
-    _start(options) {
+    _initialize() {
 
-        const gateway = new Gateway(this, options);
-        this.gateway = gateway;
-
-        gateway.events
+        this.gateway.events
             .on('error', (error) => {
 
-                this.log('error', new Error(`Gateway for shard ${this._displayShard} errored: ${error.message}`));
+                this.log('error', `Gateway for shard ${this.gateway._shard.join('/')} errored: ${error.message}`);
             })
             .on('dispatch', (event, data) => {
 
                 this.events.emit(event, data);
             });
-
-        return new Promise((resolve, reject) => {
-
-            gateway._start(true, (error) => {
-
-                if (error) {
-                    return reject(error);
-                }
-
-                return resolve();
-            });
-        });
     }
 };

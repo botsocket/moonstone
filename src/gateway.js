@@ -31,7 +31,7 @@ internals.nonReconnectableCodes = [
 ];
 
 module.exports = class {
-    constructor(client, options) {
+    constructor(client) {
 
         this.client = client;
         this.events = new Events.EventEmitter();
@@ -40,9 +40,8 @@ module.exports = class {
 
         // Settings
 
-        this._url = options.url;                                        // WebSocket URL
-        this._shard = options.shard || [0, 1];                          // Total number of shards
-        this._displayShard = this._shard.join('/');                     // id/total
+        this._url = null;                                               // WebSocket URL
+        this._shard = null;                                             // Total number of shards
 
         // State
 
@@ -58,22 +57,46 @@ module.exports = class {
         this._stopCallback = null;                                      // stop() callback
     }
 
-    _start(initial, callback) {
+    _start(options) {
 
         Dust.assert(!this._ws, 'Client already started');
-        Dust.assert(!initial || !this._reconnection, 'Cannot start a client while it is attempting to reconnect');
+        Dust.assert(!this._reconnection, 'Cannot start a client while it is attempting to reconnect');
 
-        if (initial) {
-            const reconnect = this.client._settings.reconnect;
-            if (reconnect !== false) {                                                                  // Defaults to true
-                this._reconnection = {
-                    wait: 0,
-                    delay: reconnect.delay || 1000,
-                    maxDelay: reconnect.maxDelay || 5000,
-                    attempts: reconnect.attempts === undefined ? Infinity : reconnect.attempts,            // Could be 0
-                };
-            }
+        const reconnect = this.client._settings.reconnect;
+        if (reconnect !== false) {                                                                  // Defaults to true
+            this._reconnection = {
+                wait: 0,
+                delay: reconnect.delay || 1000,
+                maxDelay: reconnect.maxDelay || 5000,
+                attempts: reconnect.attempts === undefined ? Infinity : reconnect.attempts,            // Could be 0
+            };
         }
+
+        this._url = options.url;
+        this._shard = options.shard || [0, 1];
+
+        return new Promise((resolve, reject) => {
+
+            this._connect((error) => {
+
+                if (error) {
+                    return reject(error);
+                }
+
+                return resolve();
+            });
+        });
+    }
+
+    _stop() {
+
+        return new Promise((resolve) => {
+
+            this._disconnect(resolve);
+        });
+    }
+
+    _connect(callback) {
 
         const ws = new Ws(this._url);
         this._ws = ws;
@@ -184,7 +207,7 @@ module.exports = class {
     _reconnect() {
 
         if (!this._reconnection.attempts) {
-            this._stop();
+            this._disconnect();
             return;
         }
 
@@ -196,11 +219,11 @@ module.exports = class {
 
         this._reconnectionTimer = setTimeout(() => {
 
-            this._start(false);
+            this._connect();
         }, timeout);
     }
 
-    _stop(callback) {
+    _disconnect(callback) {
 
         this._reconnection = null;
         clearTimeout(this._reconnectionTimer);
@@ -244,7 +267,7 @@ module.exports = class {
 
         if (payload.op === internals.opCodes.hello) {
             const heartbeatInterval = payload.d.heartbeat_interval;
-            const heartbeatHandler = function () {
+            const heartbeatHandler = () => {
 
                 this._beat();
             };
@@ -286,7 +309,7 @@ module.exports = class {
                 return;
             }
 
-            this._stop();
+            this._disconnect();
             return;
         }
 
