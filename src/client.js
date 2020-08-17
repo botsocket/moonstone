@@ -6,58 +6,69 @@ const Radar = require('@botbind/radar');
 
 const Gateway = require('./gateway');
 const Settings = require('./settings');
+const Package = require('../package.json');
 
 module.exports = class {
     constructor(options) {
 
         this._settings = Settings.apply(options, 'client');
+
         this._radar = Radar.custom({
-            baseUrl: 'https://discord.com/api/v6',
+            baseUrl: 'https://discord.com',
             headers: {
                 Authorization: `Bot ${this._settings.token}`,
+                'User-Agent': `DiscordBot (${Package.homepage}, ${Package.version}) Node.js/${process.version}`,
             },
         });
 
         this.gateway = null;
         this.events = new Events.EventEmitter();
 
-        this._init();
+        this._debug();
     }
 
     async start() {
 
         // Shard if specified
 
-        const shard = this._settings.shard;
-        if (shard) {
-            return this._start(shard);
+        if (this._settings.gateway) {
+            return this._start(this._settings.gateway);
         }
 
         // Start single shard
 
-        const response = await this._radar.get('/gateway');
+        const response = await this._radar.get('/api/v6/gateway');
 
         if (response.statusCode !== 200) {
             throw new Error(`Sever responded with code ${response.statusCode} - ${response.statusMessage}`);
         }
 
-        this._start(response.payload);
+        const options = response.payload;
+        options.shard = [0, 1];
+
+        return this._start(options);
     }
 
     stop() {
 
         if (this.gateway) {
-            return this.gateway.stop();
+            return new Promise((resolve) => {
+
+                this.gateway._stop(resolve);
+            });
         }
 
         return Promise.resolve();
     }
 
+    log(type, message) {
+
+        this.events.emit('debug', { type, message });
+    }
+
     // Private methods
 
-    _init() {
-
-        // Setup debug
+    _debug() {
 
         if (this._settings.debug) {
             this.events.on('debug', (context) => {
@@ -65,24 +76,26 @@ module.exports = class {
                 console.log(`[${context.type}] ${context.message}`);
             });
         }
-
-        // Register gateway events
-
-        if (this.gateway) {
-            this.gateway.events.on('open', () => {
-
-                this.events.emit('debug', { type: 'info', message: `Gateway opened for shard ${this.gateway._shardId}` });
-            });
-        }
     }
 
-    _start(shard) {
+    _start(options) {
 
-        this.gateway = new Gateway(this, shard);
+        const gateway = new Gateway(this, options);
+        this.gateway = gateway;
+
+        gateway.events
+            .on('error', (error) => {
+
+                this.log('error', new Error(`Gateway for shard ${this._displayShard} errored: ${error.message}`));
+            })
+            .on('dispatch', (event, data) => {
+
+                this.events.emit(event, data);
+            });
 
         return new Promise((resolve, reject) => {
 
-            this.gateway._start((error) => {
+            gateway._start(true, (error) => {
 
                 if (error) {
                     return reject(error);
