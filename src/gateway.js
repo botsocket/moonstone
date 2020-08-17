@@ -54,7 +54,7 @@ module.exports = class {
         this._remainingPayloads = internals.ratelimit.total;            // Remaining payloads until rate limited
         this._reconnection = null;                                      // Reconnection config
         this._reconnectionTimer = null;                                 // Reconnection timeout
-        this._disconnectCallback = null;                                      // stop() callback
+        this._disconnectCallback = null;                                // _disconnect() callback
     }
 
     _start(options) {
