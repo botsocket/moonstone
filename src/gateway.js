@@ -344,7 +344,7 @@ module.exports = class {
                 op: internals.opCodes.resume,
                 d: {
                     token,
-                    session_id: this.id, // eslint-disable-line camelcase
+                    session_id: this.id,                    // eslint-disable-line camelcase
                     seq: this._seq,
                 },
             });

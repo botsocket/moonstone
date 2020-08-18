@@ -20,22 +20,20 @@ internals.client = Lyra.obj({
     token: Lyra.str().required(),
     debug: Lyra.bool().default(false),
     timeout: Lyra.num(),
-    reconnect: Lyra.alt(
-        Lyra.bool(),
+    reconnect: Lyra.obj(
         {
-            delay: Lyra.num(),
-            maxDelay: Lyra.num(),
-            attempt: Lyra.num().allow(Infinity, false),
+            delay: Lyra.num().default(1000),
+            maxDelay: Lyra.num().default(5000),
+            attempts: Lyra.num().allow(Infinity, false).default(Infinity),
         },
     )
-        .default({
-            delay: 1000,
-            maxDelay: 5000,
-            attempt: Infinity,
+        .allow(true, false)
+        .messages({
+            'object.base': '{#label} must be a boolean or an object',
         }),
     gateway: {
         url: Lyra.str().required(),
-        shard: Lyra.arr().ordered(Lyra.num().required(), Lyra.num().required()),
+        shard: Lyra.arr().ordered(Lyra.num().required(), Lyra.num().required()).required(),
     },
 })
     .default();
