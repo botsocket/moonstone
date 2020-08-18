@@ -157,18 +157,17 @@ module.exports = class {
             this._cleanup();
 
             if (internals.nonReconnectableCodes.includes(code)) {
-                finalize(new Error(code === 4004 ? 'Invalid token' : reason));
-                return;
+                return finalize(new Error(code === 4004 ? 'Invalid token' : reason));
             }
 
             if (this._disconnectCallback) {
-                this._disconnectCallback();
+                const disconnectCallback = this._disconnectCallback;
                 this._disconnectCallback = null;
-                return;
+                return disconnectCallback();
             }
 
             if (!this._reconnection.attempts) {
-                finalize(new Error('Maximum reconnection attempts reached'));
+                return finalize(new Error('Maximum reconnection attempts reached'));
             }
 
             this._reconnect();
@@ -207,8 +206,7 @@ module.exports = class {
     _reconnect() {
 
         if (!this._reconnection.attempts) {
-            this._disconnect();
-            return;
+            return this._disconnect();
         }
 
         const reconnection = this._reconnection;
@@ -230,8 +228,7 @@ module.exports = class {
         this._reconnectionTimer = null;
 
         if (!this._ws) {
-            callback();
-            return;
+            return callback();
         }
 
         if (callback) {
@@ -251,8 +248,7 @@ module.exports = class {
             payload = JSON.parse(message);
         }
         catch (error) {
-            callback(new Error('Invalid JSON content'));
-            return;
+            return callback(new Error('Invalid JSON content'));
         }
 
         // Assign new sequence number
@@ -273,15 +269,14 @@ module.exports = class {
             };
 
             this._heartbeatTimer = setInterval(heartbeatHandler, heartbeatInterval);
-            this._identify();
-            return;
+
+            return this._identify();
         }
 
         // Heartbeat
 
         if (payload.op === internals.opCodes.heartbeat) {
-            this._beat();
-            return;
+            return this._beat();
         }
 
         // Heartbeat acknowledge
@@ -295,8 +290,8 @@ module.exports = class {
 
         if (payload.op === internals.opCodes.reconnect) {
             this._cleanup(4000);            // Unknown
-            this._reconnect();
-            return;
+
+            return this._reconnect();
         }
 
         // Invalid session
@@ -305,12 +300,10 @@ module.exports = class {
             const resumable = payload.d;
 
             if (resumable) {
-                this._identify();
-                return;
+                return this._identify();
             }
 
-            this._disconnect();
-            return;
+            return this._disconnect();
         }
 
         // Dispatch
@@ -332,8 +325,8 @@ module.exports = class {
 
         if (!this._heartbeatAcked) {
             this._cleanup(4000);
-            this._reconnect();
-            return;
+
+            return this._reconnect();
         }
 
         this._heartbeatAcked = false;
@@ -347,7 +340,7 @@ module.exports = class {
         // Resume if possible
 
         if (this.id) {
-            this._send({
+            return this._send({
                 op: internals.opCodes.resume,
                 d: {
                     token,
@@ -355,8 +348,6 @@ module.exports = class {
                     seq: this._seq,
                 },
             });
-
-            return;
         }
 
         // Identify new session

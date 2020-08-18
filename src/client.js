@@ -5,6 +5,7 @@ const Events = require('events');
 const Radar = require('@botbind/radar');
 
 const Gateway = require('./gateway');
+const Handlers = require('./handlers');
 const Settings = require('./settings');
 const Package = require('../package.json');
 
@@ -12,9 +13,8 @@ module.exports = class {
     constructor(options) {
 
         this._settings = Settings.apply(options, 'client');
-
         this._radar = Radar.custom({
-            baseUrl: 'https://discord.com',
+            baseUrl: 'https://discord.com/api/v6',
             headers: {
                 Authorization: `Bot ${this._settings.token}`,
                 'User-Agent': `DiscordBot (${Package.homepage}, ${Package.version}) Node.js/${process.version}`,
@@ -23,9 +23,32 @@ module.exports = class {
 
         this.gateway = new Gateway(this);
         this.events = new Events.EventEmitter();
+        this.user = null;                                   // Client user
+        this.guilds = new Map();                            // Active guilds. id -> guild
 
         this._debug();
-        this._initialize();
+    }
+
+    _debug() {
+
+        // Debug mode
+
+        if (this._settings.debug) {
+            this.events.on('debug', (context) => {
+
+                console.log(`[${context.type}] ${context.message}`);
+            });
+        }
+
+        this.gateway.events.on('error', (error) => {
+
+            this.events.emit('debug', { type: 'info', message: `Gateway for shard ${this.gateway._shard.join('/')} errored: ${error.message}` });
+        });
+
+        this.gateway.events.on('dispatch', (event, data) => {
+
+            Handlers.handle(this, event, data);
+        });
     }
 
     async start() {
@@ -38,7 +61,7 @@ module.exports = class {
 
         // Single shard
 
-        const response = await this._radar.get('/api/v6/gateway');
+        const response = await this._radar.get('/gateway');
 
         if (response.statusCode !== 200) {
             throw new Error(`Sever responded with code ${response.statusCode} - ${response.statusMessage}`);
@@ -50,35 +73,5 @@ module.exports = class {
     stop() {
 
         return this.gateway._stop();
-    }
-
-    log(type, message) {
-
-        this.events.emit('debug', { type, message });
-    }
-
-    // Private methods
-
-    _debug() {
-
-        if (this._settings.debug) {
-            this.events.on('debug', (context) => {
-
-                console.log(`[${context.type}] ${context.message}`);
-            });
-        }
-    }
-
-    _initialize() {
-
-        this.gateway.events
-            .on('error', (error) => {
-
-                this.log('error', `Gateway for shard ${this.gateway._shard.join('/')} errored: ${error.message}`);
-            })
-            .on('dispatch', (event, data) => {
-
-                this.events.emit(event, data);
-            });
     }
 };
