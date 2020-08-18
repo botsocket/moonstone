@@ -263,12 +263,11 @@ module.exports = class {
 
         if (payload.op === internals.opCodes.hello) {
             const heartbeatInterval = payload.d.heartbeat_interval;
-            const heartbeatHandler = () => {
+
+            this._heartbeatTimer = setInterval(() => {
 
                 this._beat();
-            };
-
-            this._heartbeatTimer = setInterval(heartbeatHandler, heartbeatInterval);
+            }, heartbeatInterval);
 
             return this._identify();
         }
