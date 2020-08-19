@@ -3,7 +3,6 @@
 'use strict';
 
 const Ws = require('ws');
-const Nock = require('nock');
 
 const internals = {
     opCodes: {                              // https://discord.com/developers/docs/topics/opcodes-and-status-codes
@@ -18,18 +17,6 @@ const internals = {
     },
 };
 
-exports.discord = function () {
-
-    internals.rest();
-    const cleanup = internals.gateway();
-
-    return () => {
-
-        Nock.cleanAll();
-        cleanup();
-    };
-};
-
 exports.config = {
     gatewayUrl: 'ws://localhost:3000',
     token: 'Some token',
@@ -38,7 +25,7 @@ exports.config = {
     heartbeatInterval: 42.5 * 1000,
 };
 
-internals.gateway = function () {
+exports.gateway = function () {
 
     const server = new Ws.Server({ port: 3000 });
     const config = exports.config;
@@ -79,7 +66,7 @@ internals.gateway = function () {
                     });
                 }
 
-                socket.close(4010);                 // Authentication failed
+                socket.close(4004);                 // Authentication failed
                 return;
             }
 
@@ -96,12 +83,4 @@ internals.gateway = function () {
         server.close();
         server.removeAllListeners();
     };
-};
-
-internals.rest = function () {
-
-    const rest = Nock('https://discord.com/api/v6');
-
-    rest
-        .get('/gateway').reply(200, { url: exports.config.gatewayUrl });
 };

@@ -288,7 +288,7 @@ module.exports = class {
         // Reconnection requested
 
         if (payload.op === internals.opCodes.reconnect) {
-            this._cleanup(4000);            // Unknown
+            this._cleanup(4000);                                            // Unknown
 
             return this._reconnect();
         }
@@ -311,7 +311,7 @@ module.exports = class {
             const event = payload.t;
             const eventName = internals.event(event);
 
-            this.events.emit('dispatch', eventName, payload.d);
+            this.events.emit('dispatch', eventName, payload.d);             // Synchronous
 
             if (eventName === 'ready') {
                 this.id = payload.d.session_id;

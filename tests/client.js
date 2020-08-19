@@ -1,9 +1,20 @@
 'use strict';
 
+const Nock = require('nock');
+
 const Nebula = require('../src');
 const Utils = require('./utils');
 
+const internals = {
+    rest: Nock('https://discord.com/api/v6'),
+};
+
 describe('client()', () => {
+
+    afterEach(() => {
+
+        Nock.cleanAll();
+    });
 
     describe('constructor()', () => {
 
@@ -33,7 +44,8 @@ describe('client()', () => {
 
         it('should connect to Discord', async () => {
 
-            const cleanup = Utils.discord();
+            internals.rest.get('/gateway').reply(200, { url: Utils.config.gatewayUrl });
+            const cleanup = Utils.gateway();
 
             const client = Nebula.client({ token: Utils.config.token });
             await client.start();
@@ -41,6 +53,41 @@ describe('client()', () => {
             expect(client.gateway.id).toBe(Utils.config.sessionId);
             expect(client.user.id).toBe(Utils.config.userId);
 
+            cleanup();
+        });
+
+        it('should reject on incorrect tokens', async () => {
+
+            internals.rest.get('/gateway').reply(200, { url: Utils.config.gatewayUrl });
+            const cleanup = Utils.gateway();
+
+            const client = Nebula.client({ token: 'Wrong token' });
+            await expect(client.start()).rejects.toThrow('Invalid token');
+
+            cleanup();
+        });
+
+        it('should reject when /gateway returns HTTP code different from 200', async () => {
+
+            internals.rest.get('/gateway').reply(404);
+
+            const client = Nebula.client({ token: Utils.config.token });
+            await expect(client.start()).rejects.toThrow('Server responded with status code 404');
+        });
+
+        it('should be able to stop and start the client again', async () => {
+
+            const rest = internals.rest.get('/gateway').reply(200, { url: Utils.config.gatewayUrl }).persist();
+            const cleanup = Utils.gateway();
+
+            const client = Nebula.client({ token: Utils.config.token });
+            await client.start();
+            client.stop();
+            await client.start();
+            expect(client.gateway.id).toBe(Utils.config.sessionId);
+            expect(client.user.id).toBe(Utils.config.userId);
+
+            rest.persist(false);
             cleanup();
         });
     });

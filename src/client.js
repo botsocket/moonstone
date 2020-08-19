@@ -64,7 +64,7 @@ module.exports = class {
         const response = await this._radar.get('/gateway');
 
         if (response.statusCode !== 200) {
-            throw new Error(`Sever responded with code ${response.statusCode} - ${response.statusMessage}`);
+            throw new Error(`Server responded with status code ${response.statusCode}`);
         }
 
         return this.gateway._start(response.payload);
