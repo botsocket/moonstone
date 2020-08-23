@@ -23,8 +23,11 @@ module.exports = class {
 
         this.gateway = new Gateway(this);
         this.events = new Events.EventEmitter();
-        this.user = null;                                   // Client user
-        this.guilds = new Map();                            // Active guilds. id -> guild
+
+        this.user = null;                                           // Client user
+        this.users = new Map();                                     // Cached users. id -> user (includes client user)
+        this.guilds = new Map();                                    // Cached guilds. id -> guild
+        this.channels = new Map();                                  // Cached channels. id -> channel
 
         this._debug();
     }
@@ -40,15 +43,15 @@ module.exports = class {
             });
         }
 
-        this.gateway.events.on('error', (error) => {
+        this.gateway.events
+            .on('error', (error) => {
 
-            this.events.emit('debug', { type: 'info', message: `Gateway for shard ${this.gateway._shard.join('/')} errored: ${error.message}` });
-        });
+                this.events.emit('debug', { type: 'info', message: `Gateway for shard ${this.gateway._shard.join('/')} errored: ${error.message}` });
+            })
+            .on('dispatch', (event, data) => {
 
-        this.gateway.events.on('dispatch', (event, data) => {
-
-            Handlers.handle(this, event, data);
-        });
+                Handlers.handle(this, event, data);
+            });
     }
 
     async start() {

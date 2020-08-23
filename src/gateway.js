@@ -408,7 +408,7 @@ internals.event = function (name) {
 
     const lowercased = name.toLowerCase();
 
-    return lowercased.replace(/(?:[-_]([a-z]))/g, ($1) => {
+    return lowercased.replace(/[-_]([a-z])/g, ($0, $1) => {
 
         return $1.toUpperCase();
     });
