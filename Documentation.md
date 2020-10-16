@@ -7,5 +7,5 @@
 Nebula is available on npm:
 
 ```bash
-npm install @botbind/nebula
+npm install @botsocket/moonstone
 ```

@@ -1,6 +1,4 @@
-# Nebula
-
-![Bot Bind's logo](https://botbind.com/images/logoBB.png)
+# Moonstone
 
 ## A simple yet powerful Discord framework for building scalable bot applications
 
@@ -13,6 +11,6 @@ Special thanks to all contributors of the following libraries:
 
 ### References
 
--   [Documentation and API](https://github.com/botbind/nebula/blob/master/Documentation.md)
--   [Release notes](https://github.com/botbind/nebula/labels/release%20notes)
--   [Bot Bind](https://botbind.com)
+-   [Documentation and API](https://github.com/botsocket/moonstone/blob/master/Documentation.md)
+-   [Releases](https://github.com/botsocket/moonstone/releases)
+-   [BotSocket](https://botsocket.com)
