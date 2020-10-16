@@ -1,10 +1,10 @@
 'use strict';
 
-const Lyra = require('@botbind/lyra');
+const Jade = require('@botsocket/jade');
 
 const internals = {};
 
-exports.apply = function (options, type) {
+exports.apply = function (type, options) {
 
     const schema = internals[type];
 
@@ -16,24 +16,9 @@ exports.apply = function (options, type) {
     }
 };
 
-internals.client = Lyra.obj({
-    token: Lyra.str().required(),
-    debug: Lyra.bool().default(false),
-    timeout: Lyra.num(),
-    reconnect: Lyra.obj(
-        {
-            delay: Lyra.num().default(1000),
-            maxDelay: Lyra.num().default(5000),
-            attempts: Lyra.num().allow(Infinity, false).default(Infinity),
-        },
-    )
-        .allow(true, false)
-        .messages({
-            'object.base': '{#label} must be a boolean or an object',
-        }),
-    gateway: {
-        url: Lyra.str().required(),
-        shard: Lyra.arr().ordered(Lyra.num().required(), Lyra.num().required()).required(),
-    },
+internals.client = Jade.obj({
+    token: Jade.str().required(),
+    debug: Jade.bool().default(false),
+    gateway: Jade.object(),                         // Validated in Quartz
 })
     .default();

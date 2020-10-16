@@ -26,7 +26,14 @@
         "jest": "^25.1.0",
         "typescript": "^3.8.3"
     },
-    "dependencies": {},
+    "dependencies": {
+        "@botsocket/bone": "^1.0.0",
+        "@botsocket/bornite": "^1.0.1",
+        "@botsocket/copal": "^1.0.1",
+        "@botsocket/jade": "^1.0.0",
+        "@botsocket/quartz": "^1.0.0",
+        "@botsocket/topaz": "^1.0.1"
+    },
     "engines": {
         "node": ">=12.0.0"
     }

@@ -2,79 +2,80 @@
 
 const Events = require('events');
 
-const Radar = require('@botbind/radar');
+const Quartz = require('@botsocket/quartz');
+const Bornite = require('@botsocket/bornite');
 
-const Gateway = require('./gateway');
-const Handlers = require('./handlers');
 const Settings = require('./settings');
-const Package = require('../package.json');
+const Package = require('../package');
 
-module.exports = class {
+const internals = {};
+
+exports.client = function (options) {
+
+    return new internals.Client(options);
+};
+
+internals.Client = class {
+
     constructor(options) {
 
-        this._settings = Settings.apply(options, 'client');
-        this._radar = Radar.custom({
+        this._settings = Settings.apply('client', options);
+
+        this._bornite = null;
+        this._quartz = null;
+
+        this.events = new Events.EventEmitter();
+
+        this._setup();
+    }
+
+    _setup() {
+
+        // Setup bornite instance
+
+        this._bornite = Bornite.custom({
             baseUrl: 'https://discord.com/api/v6',
             headers: {
                 Authorization: `Bot ${this._settings.token}`,
                 'User-Agent': `DiscordBot (${Package.homepage}, ${Package.version}) Node.js/${process.version}`,
             },
         });
-
-        this.gateway = new Gateway(this);
-        this.events = new Events.EventEmitter();
-
-        this.user = null;                                           // Client user
-        this.users = new Map();                                     // Cached users. id -> user (includes client user)
-        this.guilds = new Map();                                    // Cached guilds. id -> guild
-        this.channels = new Map();                                  // Cached channels. id -> channel
-
-        this._debug();
-    }
-
-    _debug() {
-
-        // Debug mode
-
-        if (this._settings.debug) {
-            this.events.on('debug', (context) => {
-
-                console.log(`[${context.type}] ${context.message}`);
-            });
-        }
-
-        this.gateway.events
-            .on('error', (error) => {
-
-                this.events.emit('debug', { type: 'info', message: `Gateway for shard ${this.gateway._shard.join('/')} errored: ${error.message}` });
-            })
-            .on('dispatch', (event, data) => {
-
-                Handlers.handle(this, event, data);
-            });
     }
 
     async start() {
 
-        //  Shard if specified
+        // Fetch gateway url
 
-        if (this._settings.gateway) {
-            return this.gateway._start(this._settings.gateway);
-        }
-
-        // Single shard
-
-        const response = await this._radar.get('/gateway');
+        const response = await this._bornite.get('/gateway');
 
         if (response.statusCode !== 200) {
             throw new Error(`Server responded with status code ${response.statusCode}`);
         }
 
-        return this.gateway._start(response.payload);
+        // Connect to gateway
+
+        const quartz = Quartz.client(response.url, { ...this._settings.gateway, token: this._settings.token });
+        this._quartz = quartz;
+
+        quartz.onDispatch = (event, data) => {
+
+            return this._handle(event, data);
+        };
+
+        return quartz.connect();
     }
 
     stop() {
 
-        return this.gateway._stop();
+        if (!this._quartz) {
+            return Promise.resolve();
+        }
+
+        return this._quartz.disconnect();
+    }
+
+    _handle() {
+
+        // Stuff
     }
 };
