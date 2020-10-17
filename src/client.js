@@ -5,7 +5,9 @@ const Events = require('events');
 const Quartz = require('@botsocket/quartz');
 const Bornite = require('@botsocket/bornite');
 
+const User = require('./entities/user');
 const Settings = require('./settings');
+const Utils = require('./utils');
 const Package = require('../package');
 
 const internals = {};
@@ -21,61 +23,59 @@ internals.Client = class {
 
         this._settings = Settings.apply('client', options);
 
-        this._bornite = null;
-        this._quartz = null;
-
-        this.events = new Events.EventEmitter();
-
-        this._setup();
-    }
-
-    _setup() {
-
-        // Setup bornite instance
-
-        this._bornite = Bornite.custom({
-            baseUrl: 'https://discord.com/api/v6',
+        this._url = null;
+        this._gateway = null;
+        this._rest = Bornite.custom({
+            baseUrl: 'https://discord.com/api/v8',
             headers: {
                 Authorization: `Bot ${this._settings.token}`,
                 'User-Agent': `DiscordBot (${Package.homepage}, ${Package.version}) Node.js/${process.version}`,
             },
         });
+
+        // Public interfaces
+
+        this.events = new Events.EventEmitter();
+        this.user = null;
     }
 
     async start() {
 
         // Fetch gateway url
 
-        const response = await this._bornite.get('/gateway');
-
-        if (response.statusCode !== 200) {
-            throw new Error(`Server responded with status code ${response.statusCode}`);
+        if (!this._url) {
+            const response = await this._rest.get('/gateway');
+            const payload = Utils.payload(response);
+            this._url = payload.url + '/?v=8&encoding=json';
         }
 
         // Connect to gateway
 
-        const quartz = Quartz.client(response.url, { ...this._settings.gateway, token: this._settings.token });
-        this._quartz = quartz;
+        const gateway = Quartz.client(this._url, { ...this._settings.gateway, token: this._settings.token });
+        this._gateway = gateway;
 
-        quartz.onDispatch = (event, data) => {
+        gateway.onDispatch = (event, data) => {
 
-            return this._handle(event, data);
+            return this._process(event, data);
         };
 
-        return quartz.connect();
+        return gateway.connect();
     }
 
     stop() {
 
-        if (!this._quartz) {
+        if (!this._gateway) {
             return Promise.resolve();
         }
 
-        return this._quartz.disconnect();
+        return this._gateway.disconnect();
     }
 
-    _handle() {
+    _process(event, data) {
 
-        // Stuff
+        if (event === 'READY') {
+            this.user = new User(this, data.user);
+            this.events.emit('ready');
+        }
     }
 };
