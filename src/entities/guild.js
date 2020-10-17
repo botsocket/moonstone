@@ -18,28 +18,6 @@ module.exports = class {
         this._update(data);
     }
 
-    _getChannel(id) {
-
-        if (!id) {
-            return null;
-        }
-
-        return this.channels.get(id);
-    }
-
-    _upsertChannel(data) {
-
-        const existingChannel = this.channels.get(data.id);
-        if (existingChannel) {
-            existingChannel._update(data);
-            return existingChannel;
-        }
-
-        const channel = new internals.Channel(this, data);
-        this.channels.set(channel.id, channel);
-        return channel;
-    }
-
     _update(data) {
 
         // Update channels
@@ -113,6 +91,28 @@ module.exports = class {
         this.preferredLocale = data.preferred_locale;
         this.publicUpdatesChannel = this._getChannel(data.public_updates_channel_id);
         this.maxVideoChannelUsers = data.max_video_channel_users || null;
+    }
+
+    _getChannel(id) {
+
+        if (!id) {
+            return null;
+        }
+
+        return this.channels.get(id);
+    }
+
+    _upsertChannel(data) {
+
+        const existingChannel = this.channels.get(data.id);
+        if (existingChannel) {
+            existingChannel._update(data);
+            return existingChannel;
+        }
+
+        const channel = new internals.Channel(this, data);
+        this.channels.set(channel.id, channel);
+        return channel;
     }
 
     leave() {
