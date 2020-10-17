@@ -1,17 +1,16 @@
 'use strict';
 
 const Settings = require('../settings');
-const Utils = require('../utils');
 
 module.exports = class {
     constructor(client, data) {
 
-        this._client = client;
+        this.client = client;
 
         this.id = data.id;
         this.username = data.username;
         this.discriminator = data.discriminator;
-        this.avatar = data.avatar || null;
+        this.avatar = data.avatar;
         this.bot = Boolean(data.bot);
         this.system = Boolean(data.system);
         this.mfaEnabled = Boolean(data.mfa_enabled);
@@ -42,7 +41,7 @@ module.exports = class {
 
     async createDm() {
 
-        const response = await this._client._rest.post('/users/@me/channels', { payload: { recipient_id: this.id } });
-        return Utils.payload(response);
+        const response = await this.client._rest.post('/users/@me/channels', { payload: { recipient_id: this.id } });
+        return response.payload;
     }
 };

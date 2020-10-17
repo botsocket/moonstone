@@ -6,8 +6,8 @@ const Quartz = require('@botsocket/quartz');
 const Bornite = require('@botsocket/bornite');
 
 const User = require('./entities/user');
+const Guild = require('./entities/guild');
 const Settings = require('./settings');
-const Utils = require('./utils');
 const Package = require('../package');
 
 const internals = {};
@@ -37,6 +37,7 @@ internals.Client = class {
 
         this.events = new Events.EventEmitter();
         this.user = null;
+        this.guilds = new Map();
     }
 
     async start() {
@@ -45,8 +46,7 @@ internals.Client = class {
 
         if (!this._url) {
             const response = await this._rest.get('/gateway');
-            const payload = Utils.payload(response);
-            this._url = payload.url + '/?v=8&encoding=json';
+            this._url = response.payload.url + '/?v=8&encoding=json';
         }
 
         // Connect to gateway
@@ -76,6 +76,12 @@ internals.Client = class {
         if (event === 'READY') {
             this.user = new User(this, data.user);
             this.events.emit('ready');
+        }
+
+        if (event === 'GUILD_CREATE') {
+            const guild = new Guild(this, data);
+            this.guilds.set(data.id, guild);
+            this.events.emit('guildCreate', guild);
         }
     }
 };
