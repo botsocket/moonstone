@@ -41,7 +41,7 @@ module.exports = class {
 
     async createDm() {
 
-        const response = await this.client._rest.post('/users/@me/channels', { payload: { recipient_id: this.id } });
+        const response = await this.client._bornite.post('/users/@me/channels', { payload: { recipient_id: this.id } });
         return response.payload;
     }
 };

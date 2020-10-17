@@ -24,8 +24,8 @@ internals.Client = class {
         this._settings = Settings.apply('client', options);
 
         this._url = null;
-        this._gateway = null;
-        this._rest = Bornite.custom({
+        this._quartz = null;
+        this._bornite = Bornite.custom({
             baseUrl: 'https://discord.com/api/v8',
             headers: {
                 Authorization: `Bot ${this._settings.token}`,
@@ -45,43 +45,66 @@ internals.Client = class {
         // Fetch gateway url
 
         if (!this._url) {
-            const response = await this._rest.get('/gateway');
+            const response = await this._bornite.get('/gateway');
             this._url = response.payload.url + '/?v=8&encoding=json';
         }
 
         // Connect to gateway
 
-        const gateway = Quartz.client(this._url, { ...this._settings.gateway, token: this._settings.token });
-        this._gateway = gateway;
+        const quartz = Quartz.client(this._url, { ...this._settings.gateway, token: this._settings.token });
+        this._quartz = quartz;
 
-        gateway.onDispatch = (event, data) => {
+        quartz.onDispatch = (event, data) => {
 
             return this._process(event, data);
         };
 
-        return gateway.connect();
+        return quartz.connect();
     }
 
     stop() {
 
-        if (!this._gateway) {
+        if (!this._quartz) {
             return Promise.resolve();
         }
 
-        return this._gateway.disconnect();
+        return this._quartz.disconnect();
     }
 
     _process(event, data) {
 
-        if (event === 'READY') {
+        event = internals.event(event);
+
+        if (event === 'ready') {
             this.user = new User(this, data.user);
-            this.events.emit('ready');
+            return this.events.emit(event);
         }
 
-        if (event === 'GUILD_CREATE') {
+        if (event === 'guildCreate') {
             const guild = new Guild(this, data);
             this.guilds.set(data.id, guild);
-            this.events.emit('guildCreate', guild);
+            return this.events.emit(event, guild);
+        }
+
+        if (event === 'guildUpdate') {
+            const guild = this.guilds.get(data.id);
+            guild._update(data);
+            return this.events.emit(event, guild);
+        }
+
+        if (event === 'channelCreate' || event === 'channelUpdate') {
+            const guild = this.guilds.get(data.guild_id);
+            const channel = guild._upsertChannel(data);
+            return this.events.emit(event, channel);
         }
     }
+};
+
+internals.event = function (event) {
+
+    const lowercased = event.toLowerCase();
+    return lowercased.replace(/[-_]([a-z])/g, ($0, $1) => {
+
+        return $1.toUpperCase();
+    });
 };
