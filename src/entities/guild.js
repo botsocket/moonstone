@@ -1,6 +1,6 @@
 'use strict';
 
-const Channel = require('./channnel');
+const Channel = require('./channel');
 
 module.exports = class {
     constructor(client, data) {
