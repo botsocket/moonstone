@@ -99,14 +99,14 @@ internals.Bucket = class {
 
     initialize(response) {
 
-        if (!this.state) {
+        if (this.state) {
             this.state = {
                 delay: Number(response.headers['x-ratelimit-reset-after']),
                 limit: Number(response.headers['x-ratelimit-limit']),
             };
-        }
 
-        this.setupTimer();
+            this.setupTimer();
+        }
     }
 
     setupTimer() {
