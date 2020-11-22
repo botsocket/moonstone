@@ -28,10 +28,11 @@
     },
     "dependencies": {
         "@botsocket/bone": "^1.0.0",
-        "@botsocket/bornite": "^1.0.1",
+        "@botsocket/bornite": "^1.1.0",
         "@botsocket/copal": "^1.0.1",
         "@botsocket/jade": "^1.0.0",
         "@botsocket/quartz": "^1.0.1",
+        "@botsocket/ruby": "^1.0.1",
         "@botsocket/topaz": "^1.0.1"
     },
     "engines": {

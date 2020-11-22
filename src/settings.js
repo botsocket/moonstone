@@ -18,8 +18,12 @@ exports.apply = function (type, options) {
 
 internals.client = Jade.obj({
     token: Jade.str().required(),
-    debug: Jade.bool().default(false),
-    gateway: Jade.object(),                         // Validated in Quartz
+    api: Jade.obj({
+        userAgent: Jade.str(),
+    })
+        .default(),
+    gateway: Jade.obj().default(),                          // Validated in Quartz
+    commands: Jade.obj().default(),                         // Validated in Ruby
 })
     .default();
 

@@ -3,12 +3,11 @@
 const Events = require('events');
 
 const Quartz = require('@botsocket/quartz');
-const Bornite = require('@botsocket/bornite');
+const Ruby = require('@botsocket/ruby');
 
-const User = require('./entities/user');
-const Guild = require('./entities/guild');
+const Api = require('./api');
+const Dispatcher = require('./dispatcher');
 const Settings = require('./settings');
-const Package = require('../package');
 
 const internals = {};
 
@@ -18,93 +17,91 @@ exports.client = function (options) {
 };
 
 internals.Client = class {
-
     constructor(options) {
 
-        this._settings = Settings.apply('client', options);
+        this._settings = internals.settings(options);
 
-        this._url = null;
-        this._quartz = null;
-        this._bornite = Bornite.custom({
-            baseUrl: 'https://discord.com/api/v8',
-            headers: {
-                Authorization: `Bot ${this._settings.token}`,
-                'User-Agent': `DiscordBot (${Package.homepage}, ${Package.version}) Node.js/${process.version}`,
-            },
-        });
-
-        // Public interfaces
-
+        this._commands = Ruby.registry(this._settings.commands);
+        this.api = new Api(this._settings.api);
+        this.gateway = null;
         this.events = new Events.EventEmitter();
-        this.user = null;
         this.guilds = new Map();
+
+        this._debug();
+    }
+
+    _debug() {
+
+        if (this._settings.debug) {
+            this.events.on('log', (level, data) => {
+
+                const output = typeof data === 'object' ? JSON.stringify(data) : output;
+                console.log(`[${level}] ${output}`);
+            });
+        }
+    }
+
+    log(level, data) {
+
+        this.events.emit('log', level, data);
+    }
+
+    get commands() {
+
+        return this._commands.definitions;
+    }
+
+    command(...definitions) {
+
+        this._commands.add(...definitions);
     }
 
     async start() {
 
+        if (this.gateway) {
+            return this.gateway.connect();
+        }
+
         // Fetch gateway url
 
-        if (!this._url) {
-            const response = await this._bornite.get('/gateway');
-            this._url = response.payload.url + '/?v=8&encoding=json';
-        }
+        const { url } = await this.api.get('/gateway');
 
         // Connect to gateway
 
-        const quartz = Quartz.client(this._url, { ...this._settings.gateway, token: this._settings.token });
-        this._quartz = quartz;
+        const gateway = Quartz.client(url, this._settings.gateway);
+        this.gateway = gateway;
 
-        quartz.onDispatch = (event, data) => {
+        gateway.onDispatch = Dispatcher.dispatch;
 
-            return this._process(event, data);
-        };
-
-        return quartz.connect();
+        return gateway.connect();
     }
 
     stop() {
 
-        if (!this._quartz) {
+        if (!this.gateway) {
             return Promise.resolve();
         }
 
-        return this._quartz.disconnect();
-    }
-
-    _process(event, data) {
-
-        event = internals.event(event);
-
-        if (event === 'ready') {
-            this.user = new User(this, data.user);
-            return this.events.emit(event);
-        }
-
-        if (event === 'guildCreate') {
-            const guild = new Guild(this, data);
-            this.guilds.set(data.id, guild);
-            return this.events.emit(event, guild);
-        }
-
-        if (event === 'guildUpdate') {
-            const guild = this.guilds.get(data.id);
-            guild._update(data);
-            return this.events.emit(event, guild);
-        }
-
-        if (event === 'channelCreate' || event === 'channelUpdate') {
-            const guild = this.guilds.get(data.guild_id);
-            const channel = guild._upsertChannel(data);
-            return this.events.emit(event, channel);
-        }
+        return this.gateway.disconnect();
     }
 };
 
-internals.event = function (event) {
+internals.settings = function (options) {
 
-    const lowercased = event.toLowerCase();
-    return lowercased.replace(/[-_]([a-z])/g, ($0, $1) => {
+    const settings = Settings.apply('client', options);
 
-        return $1.toUpperCase();
-    });
+    const token = settings.token;
+    delete settings.token;
+
+    settings.gateway.token = token;
+    settings.api.token = token;
+
+    const prefix = settings.prefix;
+    delete settings.prefix;
+
+    if (prefix) {
+        settings.commands.prefix = prefix;
+    }
+
+    return settings;
 };
