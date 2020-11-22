@@ -9,7 +9,7 @@ const internals = {
     userAgent: `DiscordBot (${Package.homepage}, ${Package.version}) Node.js/${process.version}`,
 };
 
-module.exports = class {
+module.exports = internals.Api = class {
     constructor(settings) {
 
         this.url = internals.baseUrl;
@@ -60,8 +60,6 @@ module.exports = class {
                     this._buckets[id] = bucket;
                 }
 
-                // Reinitialize bucket
-
                 bucket.initialize(response);
 
                 return new Promise((resolve, reject) => {
@@ -77,14 +75,26 @@ module.exports = class {
     }
 };
 
+internals.setup = function () {
+
+    for (const method of ['get', 'post', 'put', 'patch', 'delete']) {
+        internals.Api.prototype[method] = function (url, options) {
+
+            return this._request(url, { ...options, method });
+        };
+    }
+};
+
+internals.setup();
+
 internals.Bucket = class {
     constructor(api, id) {
 
         this.api = api;
 
         this.id = id;
-        this.state = null;
-        this.requests = [];
+        this.state = null;                  // { delay, limit }
+        this.requests = [];                 // { url, options, resolve, reject }
     }
 
     initialize(response) {
