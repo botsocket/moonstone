@@ -1,11 +1,15 @@
 'use strict';
 
-const Settings = require('../settings');
+const Cdn = require('../cdn');
 
 module.exports = class {
     constructor(client, data) {
 
         this.client = client;
+        this._update(data);
+    }
+
+    _update(data) {
 
         this.id = data.id;
         this.username = data.username;
@@ -22,26 +26,17 @@ module.exports = class {
 
     avatarUrl(options = {}) {
 
-        const settings = Settings.apply('avatarUrl', options);
-        const sizeQuery = settings.size ? `?size=${settings.size}` : '';
-
-        let extension = settings.extension;
-        if (extension[0] !== '.') {
-            extension = '.' + extension;
-        }
-
-        const baseUrl = 'https://cdn.discordapp.com';
-
-        if (!this.avatar) {
-            return `${baseUrl}/embed/avatars/${this.discriminator % 5}${extension}${sizeQuery}`;
-        }
-
-        return `${baseUrl}/avatars/${this.id}/${this.avatar}${extension}${sizeQuery}`;
+        return Cdn.avatar(this.avatar, this.discriminator, options);
     }
 
     async createDm() {
 
-        const response = await this.client._bornite.post('/users/@me/channels', { payload: { recipient_id: this.id } });
+        const response = await this.client.api.post('/users/@me/channels', { payload: { recipient_id: this.id } });
         return response.payload;
+    }
+
+    async deleteDm() {
+
+
     }
 };

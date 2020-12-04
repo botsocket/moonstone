@@ -25,7 +25,9 @@ internals.Client = class {
         this.api = new Api(this._settings.api);
         this.gateway = null;
         this.events = new Events.EventEmitter();
+        this.user = null;
         this.guilds = new Map();
+        this.channels = new Map();
 
         this._debug();
     }
@@ -64,14 +66,18 @@ internals.Client = class {
 
         // Fetch gateway url
 
-        const { url } = await this.api.get('/gateway');
+        const response = await this.api.get('/gateway');
+        const url = response.payload.url;
 
         // Connect to gateway
 
         const gateway = Quartz.client(url, this._settings.gateway);
         this.gateway = gateway;
 
-        gateway.onDispatch = Dispatcher.dispatch;
+        gateway.onDispatch = (event, data) => {
+
+            Dispatcher.dispatch(this, event, data);
+        };
 
         return gateway.connect();
     }

@@ -5,153 +5,125 @@ const Bornite = require('@botsocket/bornite');
 const Package = require('../package');
 
 const internals = {
-    baseUrl: 'https://discord.com/api/v8',
-    userAgent: `DiscordBot (${Package.homepage}, ${Package.version}) Node.js/${process.version}`,
+    global: Symbol('global'),
+    majorParamsRx: /\/([a-z-]+)\/(?:[0-9]{17,19})/,
 };
 
 module.exports = internals.Api = class {
     constructor(settings) {
 
-        this.url = internals.baseUrl;
+        this._settings = settings;
+        this._buckets = {};                                     // hash -> bucket
+        this._ratelimits = {};                                  // bucket -> { remaining, timeout }
 
-        this._buckets = {};
-        this._api = Bornite.custom({
-            baseUrl: internals.baseUrl,
-            validateStatus: true,
+        this._requester = Bornite.custom({                      // Custom bornite instance
+            baseUrl: 'https://discord.com/api/v8',
+            validateStatus: internals.validateStatus,
             headers: {
-                Authorization: `Bot ${settings.token}`,
-                'User-Agent': settings.userAgent || internals.userAgent,
+                Authorization: `Bot ${this._settings.token}`,
+                'User-Agent': this._settings.userAgent || `DiscordBot (${Package.homepage}, ${Package.version})`,
             },
         });
     }
 
-    async _request(url, options) {
+    async request(method, path, options) {
 
-        let response;
-        try {
-            response = await this._api.request(url, options);
-        }
-        catch (error) {
-            response = error.response;
-            if (!response) {
-                throw error;
-            }
+        const now = Date.now();
 
-            // 401 Unauthorized
+        const defer = (bucket) => {
 
-            if (response.statusCode === 401) {
-                throw new Error('Invalid token');
-            }
-
-            // 403 Forbidden
-
-            if (response.statusCode === 403) {
-                throw new Error('Insufficient permissions');
-            }
-
-            // 429 Rate limited
-
-            if (response.statusCode === 429) {
-                const id = response.headers['x-ratelimit-bucket'];
-                let bucket = this._buckets[id];
-
-                if (!bucket) {
-                    bucket = new internals.Bucket(this, id);
-                    this._buckets[id] = bucket;
-                }
-
-                bucket.initialize(response);
-
-                return new Promise((resolve, reject) => {
-
-                    return bucket.add({ resolve, reject, url, options });
-                });
-            }
-
-            throw error;
-        }
-
-        return response.payload;
-    }
-};
-
-internals.setup = function () {
-
-    for (const method of ['get', 'post', 'put', 'patch', 'delete']) {
-        internals.Api.prototype[method] = function (url, options) {
-
-            return this._request(url, { ...options, method });
-        };
-    }
-};
-
-internals.setup();
-
-internals.Bucket = class {
-    constructor(api, id) {
-
-        this.api = api;
-
-        this.id = id;
-        this.state = null;                  // { delay, limit }
-        this.requests = [];                 // { url, options, resolve, reject }
-    }
-
-    initialize(response) {
-
-        if (this.state) {
-            this.state = {
-                delay: Number(response.headers['x-ratelimit-reset-after']),
-                limit: Number(response.headers['x-ratelimit-limit']),
-            };
-
-            this.setupTimer();
-        }
-    }
-
-    setupTimer() {
-
-        const resetTimer = setTimeout(async () => {
-
-            // Collect requests to be sent
-
-            const requests = this.requests.splice(0, this.state.limit);
-
-            // Cleanup
-
-            clearTimeout(resetTimer);
-            this.state = null;                      // State re-initialize when pending requests are made
-
-            // Send pending requests
-
-            const promises = requests.map(async (request) => {
-
-                let response;
-                try {
-                    response = await this.api._request(request.url, request.options);
-                }
-                catch (error) {
-                    return request.reject(error);
-                }
-
-                return request.resolve(response);
-            });
-
-            const responses = await Promise.all(promises);
-
-            // Remove inactive buckets
-
-            if (!this.requests.length) {
-                delete this.api._buckets[this.id];
+            if (!bucket) {
                 return;
             }
 
-            this.initialize(responses[responses.length - 1]);
-        }, this.state.delay);
-    }
+            const ratelimit = this._ratelimits[bucket];
+            if (ratelimit &&
+                (bucket === internals.global || !ratelimit.remaining)) {
 
-    add(request) {
+                const timeout = ratelimit.reset - now;
+                if (timeout < 0) {
+                    delete this._buckets[bucket];
+                    return;
+                }
 
-        this.requests.push(request);
+                return new Promise((resolve, reject) => {
+
+                    setTimeout(async () => {
+
+                        try {
+                            return resolve(await this.request(method, path, options));
+                        }
+                        catch (error) {
+                            return reject(error);
+                        }
+                    }, timeout);
+                });
+            }
+        };
+
+        let deferral = defer(internals.global);
+        if (deferral) {
+            return deferral;
+        }
+
+        const hash = internals.hash(method, path);
+        let bucket = this._buckets[hash];
+
+        deferral = defer(bucket);
+        if (deferral) {
+            return deferral;
+        }
+
+        // Make request
+
+        const response = await this._requester.request(path, { ...options, method });
+
+        const reset = response.headers['x-ratelimit-reset'];
+        const resetTimestamp = reset ? Number(reset) * 1000 : null;
+        const elapsed = resetTimestamp ? Number(resetTimestamp) * 1000 - Date.now() : -1;
+        if (elapsed < 0) {
+            return response;
+        }
+
+        // Populate rate limits
+
+        if (response.headers['x-ratelimit-global']) {
+            this._ratelimits[internals.global] = { reset: resetTimestamp };
+        }
+        else {
+            bucket = response.headers['x-ratelimit-bucket'];
+            this._buckets[hash] = bucket;
+            this._ratelimits[bucket] = {
+                remaining: Number(response.headers['x-ratelimit-remaining']),
+                reset: resetTimestamp,
+            };
+        }
+
+        // Defer requests if 429 is encountered
+
+        if (response.statusCode === 429) {
+            return this._defer({ method, path, options }, elapsed);
+        }
+
+        return response;
     }
+};
+
+internals.validateStatus = function (code) {
+
+    return code === 429 || (code >= 200 && code < 300);
+};
+
+internals.hash = function (method, path) {
+
+    return path.replace(internals.majorParamsRx, (match, resource) => {
+
+        if (resource === 'guilds' ||
+            resource === 'channels') {
+
+            match = `/${resource}/{id}`;
+        }
+
+        return `${method.toUpperCase()} ${match}`;
+    });
 };
