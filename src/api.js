@@ -6,7 +6,7 @@ const Package = require('../package');
 
 const internals = {
     global: Symbol('global'),
-    majorParamsRx: /\/([a-z-]+)\/(?:[0-9]{17,19})/,
+    paramsRx: /\/([a-z-]+)\/(?:\d{17,19})/,
 };
 
 module.exports = internals.Api = class {
@@ -14,7 +14,7 @@ module.exports = internals.Api = class {
 
         this._settings = settings;
         this._buckets = {};                                     // hash -> bucket
-        this._ratelimits = {};                                  // bucket -> { remaining, timeout }
+        this._ratelimits = {};                                  // bucket -> { remaining, reset } or global -> { reset }
 
         this._requester = Bornite.custom({                      // Custom bornite instance
             baseUrl: 'https://discord.com/api/v8',
@@ -28,84 +28,104 @@ module.exports = internals.Api = class {
 
     async request(method, path, options) {
 
-        const now = Date.now();
+        let now = Date.now();
 
-        const defer = (bucket) => {
+        // Defer if rate limited globally
 
-            if (!bucket) {
-                return;
-            }
-
-            const ratelimit = this._ratelimits[bucket];
-            if (ratelimit &&
-                (bucket === internals.global || !ratelimit.remaining)) {
-
-                const timeout = ratelimit.reset - now;
-                if (timeout < 0) {
-                    delete this._buckets[bucket];
-                    return;
-                }
-
-                return new Promise((resolve, reject) => {
-
-                    setTimeout(async () => {
-
-                        try {
-                            return resolve(await this.request(method, path, options));
-                        }
-                        catch (error) {
-                            return reject(error);
-                        }
-                    }, timeout);
-                });
-            }
-        };
-
-        let deferral = defer(internals.global);
-        if (deferral) {
-            return deferral;
+        let timeout = this._calculateTimeout(internals.global, now);
+        if (timeout) {
+            return this._defer(timeout, method, path, options);
         }
+
+        // Defer if rate limited locally
 
         const hash = internals.hash(method, path);
         let bucket = this._buckets[hash];
 
-        deferral = defer(bucket);
-        if (deferral) {
-            return deferral;
+        timeout = this._calculateTimeout(bucket, now);
+        if (timeout) {
+            return this._defer(timeout, method, path, options);
         }
 
         // Make request
 
         const response = await this._requester.request(path, { ...options, method });
 
-        const reset = response.headers['x-ratelimit-reset'];
-        const resetTimestamp = reset ? Number(reset) * 1000 : null;
-        const elapsed = resetTimestamp ? Number(resetTimestamp) * 1000 - Date.now() : -1;
-        if (elapsed < 0) {
-            return response;
-        }
+        now = Date.now();
+        bucket = response.headers['x-ratelimit-bucket'];
 
         // Populate rate limits
 
-        if (response.headers['x-ratelimit-global']) {
-            this._ratelimits[internals.global] = { reset: resetTimestamp };
-        }
-        else {
-            bucket = response.headers['x-ratelimit-bucket'];
-            this._buckets[hash] = bucket;
-            this._ratelimits[bucket] = {
-                remaining: Number(response.headers['x-ratelimit-remaining']),
-                reset: resetTimestamp,
-            };
+        if (bucket) {
+            const reset = Number(response.headers['x-ratelimit-reset']) * 1000;
+            timeout = reset - now;
+
+            if (timeout > 0) {
+                this._buckets[hash] = bucket;
+                this._ratelimits[bucket] = {
+                    remaining: Number(response.headers['x-ratelimit-remaining']),
+                    reset,
+                };
+            }
         }
 
-        // Defer requests if 429 is encountered
+        // Defer if 429 is encountered
 
         if (response.statusCode === 429) {
-            return this._defer({ method, path, options }, elapsed);
+            timeout = Number(response.headers['retry-after']) * 1000;
+
+            if (response.headers['x-ratelimit-global']) {
+                this._ratelimits[internals.global] = { reset: now + timeout };
+            }
+
+            return this._defer(timeout, method, path, options);
         }
 
         return response;
+    }
+
+    _calculateTimeout(bucket, now) {
+
+        if (!bucket) {
+            return;
+        }
+
+        const ratelimit = this._ratelimits[bucket];
+
+        if (!ratelimit) {
+            return;
+        }
+
+        if (!ratelimit ||
+            (bucket !== internals.global && ratelimit.remaining)) {
+
+            return;
+        }
+
+        const timeout = ratelimit.reset - now;
+
+        if (timeout <= 0) {
+            delete this._ratelimits[bucket];            // Delete ratelimit if timeout <= 0 (bucket has already reset)
+            return;
+        }
+
+        return timeout;
+    }
+
+    _defer(timeout, ...args) {
+
+        return new Promise((resolve, reject) => {
+
+            setTimeout(async () => {
+
+                try {
+                    return resolve(await this.request(...args));
+                }
+                catch (error) {
+                    return reject(error);
+                }
+            }, timeout);
+        });
     }
 };
 
@@ -116,14 +136,26 @@ internals.validateStatus = function (code) {
 
 internals.hash = function (method, path) {
 
-    return path.replace(internals.majorParamsRx, (match, resource) => {
+    return path.replace(internals.paramsRx, (match, resource) => {
 
-        if (resource === 'guilds' ||
-            resource === 'channels') {
+        if (resource !== 'guilds' &&
+            resource !== 'channels') {
 
-            match = `/${resource}/{id}`;
+            match = `/${resource}/params`;
         }
 
         return `${method.toUpperCase()} ${match}`;
     });
 };
+
+internals.setup = function () {
+
+    for (const method of ['get', 'post', 'put', 'patch', 'delete']) {
+        internals.Api.prototype[method] = function (path, options) {
+
+            return this.request(method, path, options);
+        };
+    }
+};
+
+internals.setup();
