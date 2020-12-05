@@ -191,16 +191,17 @@ describe('api', () => {
                 return 1000;
             };
 
-            let count = 0;
+            let count = 1;
             const cleanup = await internals.api((_, response) => {
 
-                count++;
                 response.writeHead(count === 1 ? 429 : 200, {           // Return 429 on the first request
                     'x-ratelimit-bucket': 'abcd',
                     'x-ratelimit-remaining': count === 2 ? 1 : 0,       // Return remaining 1 on second request
                     'x-ratelimit-reset': 1 + timeout,
                     'retry-after': timeout,
                 });
+
+                count++;
 
                 return response.end(internals.payload);
             });
