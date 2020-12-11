@@ -6,50 +6,71 @@ const Package = require('../package');
 
 const internals = {
     global: Symbol('global'),
-    paramsRx: /\/([a-z-]+)\/(?:\d{17,19})/,
+    baseUrl: 'https://discord.com/api/v8',
+    userAgent: `DiscordBot (${Package.homepage}, ${Package.version})`,
 };
 
 module.exports = internals.Api = class {
     constructor(settings) {
 
-        this._settings = settings;
         this._buckets = {};                                     // hash -> bucket
         this._ratelimits = {};                                  // bucket -> { remaining, reset } or global -> { reset }
 
         this._requester = Bornite.custom({                      // Custom bornite instance
-            baseUrl: 'https://discord.com/api/v8',
+            baseUrl: internals.baseUrl,
             validateStatus: internals.validateStatus,
             headers: {
-                Authorization: `Bot ${this._settings.token}`,
-                'User-Agent': this._settings.userAgent || `DiscordBot (${Package.homepage}, ${Package.version})`,
+                Authorization: `Bot ${settings.token}`,
+                'User-Agent': settings.userAgent || internals.userAgent,
             },
         });
     }
 
-    async request(method, path, options) {
+    request(builder, params, options) {
+
+        const now = Date.now();
+
+        // Global ratelimit
+
+        const ratelimit = this._ratelimits[internals.global];
+        if (ratelimit &&
+            ratelimit.reset > now) {
+
+            return internals.defer(this.request(builder, params, options), ratelimit.reset - now);
+        }
+
+        delete this._ratelimits[internals.global];
+
+        if (typeof builder === 'string') {
+            return this._request(builder, builder, options);
+        }
+
+        const path = builder(params);
+        const hash = internals.hash(builder, params);
+
+        return this._request(path, hash, options);
+    }
+
+    async _request(path, hash, options) {
 
         let now = Date.now();
-
-        // Defer if rate limited globally
-
-        let timeout = this._calculateTimeout(internals.global, now);
-        if (timeout) {
-            return this._defer(timeout, method, path, options);
-        }
-
-        // Defer if rate limited locally
-
-        const hash = internals.hash(method, path);
         let bucket = this._buckets[hash];
 
-        timeout = this._calculateTimeout(bucket, now);
-        if (timeout) {
-            return this._defer(timeout, method, path, options);
+        // Route-based ratelimit
+
+        const ratelimit = this._ratelimits[bucket];
+        if (ratelimit &&
+            !ratelimit.remaining &&
+            ratelimit.reset > now) {
+
+            return internals.defer(this._request(path, hash, options), ratelimit.reset - now);
         }
+
+        delete this._ratelimits[bucket];
 
         // Make request
 
-        const response = await this._requester.request(path, { ...options, method });
+        const response = await this._requester.request(path, options);
 
         now = Date.now();
         bucket = response.headers['x-ratelimit-bucket'];
@@ -58,9 +79,7 @@ module.exports = internals.Api = class {
 
         if (bucket) {
             const reset = Number(response.headers['x-ratelimit-reset']) * 1000;
-            timeout = reset - now;
-
-            if (timeout > 0) {
+            if (reset > now) {
                 this._buckets[hash] = bucket;
                 this._ratelimits[bucket] = {
                     remaining: Number(response.headers['x-ratelimit-remaining']),
@@ -72,60 +91,16 @@ module.exports = internals.Api = class {
         // Defer if 429 is encountered
 
         if (response.statusCode === 429) {
-            timeout = Number(response.headers['retry-after']) * 1000;
+            const ms = Number(response.headers['retry-after']) * 1000;
 
             if (response.headers['x-ratelimit-global']) {
-                this._ratelimits[internals.global] = { reset: now + timeout };
+                this._ratelimits[internals.global] = { reset: now + ms };
             }
 
-            return this._defer(timeout, method, path, options);
+            return internals.defer(this._request(path, hash, options), ms);
         }
 
         return response;
-    }
-
-    _calculateTimeout(bucket, now) {
-
-        if (!bucket) {
-            return;
-        }
-
-        const ratelimit = this._ratelimits[bucket];
-
-        if (!ratelimit) {
-            return;
-        }
-
-        if (!ratelimit ||
-            (bucket !== internals.global && ratelimit.remaining)) {
-
-            return;
-        }
-
-        const timeout = ratelimit.reset - now;
-
-        if (timeout <= 0) {
-            delete this._ratelimits[bucket];            // Delete ratelimit if timeout <= 0 (bucket has already reset)
-            return;
-        }
-
-        return timeout;
-    }
-
-    _defer(timeout, ...args) {
-
-        return new Promise((resolve, reject) => {
-
-            setTimeout(async () => {
-
-                try {
-                    return resolve(await this.request(...args));
-                }
-                catch (error) {
-                    return reject(error);
-                }
-            }, timeout);
-        });
     }
 };
 
@@ -134,17 +109,36 @@ internals.validateStatus = function (code) {
     return code === 429 || (code >= 200 && code < 300);
 };
 
-internals.hash = function (method, path) {
+internals.hash = function (builder, params) {
 
-    return path.replace(internals.paramsRx, (match, resource) => {
+    const processed = {};
+    for (const param of Object.keys(params)) {
+        if (param === 'channel' ||
+            param === 'guild') {
 
-        if (resource !== 'guilds' &&
-            resource !== 'channels') {
-
-            match = `/${resource}/params`;
+            processed[param] = params[param];
+            continue;
         }
 
-        return `${method.toUpperCase()} ${match}`;
+        processed[param] = 'EXCLUDED';
+    }
+
+    return builder(processed);
+};
+
+internals.defer = function (operation, ms) {
+
+    return new Promise((resolve, reject) => {
+
+        setTimeout(async () => {
+
+            try {
+                resolve(await operation);
+            }
+            catch (error) {
+                reject(error);
+            }
+        }, ms);
     });
 };
 
