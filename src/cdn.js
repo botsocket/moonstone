@@ -6,19 +6,27 @@ const internals = {
     baseUrl: 'https://cdn.discordapp.com',
 };
 
-exports.avatar = function (hash, discriminator, options) {
+exports.defaultAvatar = function (discriminator, options) {
 
-    const settings = Settings.apply('avatar', options);
-    const sizeQuery = settings.size ? `?size=${settings.size}` : '';
+    const suffix = internals.suffix(options);
+    return `${internals.baseUrl}/embed/avatars/${discriminator % 5}${suffix}`;
+};
 
-    let extension = settings.extension;
+exports.avatar = function (id, hash, options) {
+
+    const suffix = internals.suffix(options);
+    return `${internals.baseUrl}/avatars/${id}/${hash}${suffix}`;
+};
+
+internals.suffix = function (options) {
+
+    const image = Settings.apply('image', options);
+    const size = image.size ? `?size=${image.size}` : '';
+
+    let extension = image.extension;
     if (extension[0] !== '.') {
         extension = '.' + extension;
     }
 
-    if (!hash) {
-        return `${internals.baseUrl}/embed/avatars/${discriminator % 5}${extension}${sizeQuery}`;
-    }
-
-    return `${internals.baseUrl}/avatars/${this.id}/${hash}${extension}${sizeQuery}`;
+    return extension + size;
 };

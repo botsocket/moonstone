@@ -24,19 +24,28 @@ module.exports = class {
         this.publicFlags = data.flags || null;
     }
 
-    avatarUrl(options = {}) {
+    defaultAvatarUrl(options) {
 
-        return Cdn.avatar(this.avatar, this.discriminator, options);
+        return Cdn.defaultAvatar(this.discriminator, options);
+    }
+
+    avatarUrl(options) {
+
+        if (!this.avatar) {
+            return null;
+        }
+
+        return Cdn.avatar(this.id, this.avatar, options);
+    }
+
+    displayAvatarUrl(options) {
+
+        return this.avatarUrl(options) || this.defaultAvatarUrl(options);
     }
 
     async createDm() {
 
         const response = await this.client.api.post('/users/@me/channels', { payload: { recipient_id: this.id } });
         return response.payload;
-    }
-
-    async deleteDm() {
-
-
     }
 };

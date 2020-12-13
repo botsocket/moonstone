@@ -64,12 +64,8 @@ internals.Client = class {
             return this.gateway.connect();
         }
 
-        // Fetch gateway url
-
         const response = await this.api.get('/gateway');
         const url = response.payload.url;
-
-        // Connect to gateway
 
         const gateway = Quartz.client(url, this._settings.gateway);
         this.gateway = gateway;

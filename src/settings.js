@@ -27,7 +27,8 @@ internals.client = Jade.obj({
 })
     .default();
 
-internals.avatar = Jade.obj({
+internals.image = Jade.obj({
     extension: Jade.valid('webp', 'png', 'jpg', 'jpeg', 'gif', '.webp', '.png', '.jpg', '.jpeg', '.gif').default('png'),
     size: Jade.valid(16, 32, 64, 128, 256, 512, 1024, 2048, 4096),
-});
+})
+    .default();
