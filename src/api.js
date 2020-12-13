@@ -1,5 +1,6 @@
 'use strict';
 
+const Bone = require('@botsocket/bone');
 const Bornite = require('@botsocket/bornite');
 
 const Package = require('../package');
@@ -13,10 +14,10 @@ const internals = {
 module.exports = internals.Api = class {
     constructor(settings) {
 
-        this._buckets = {};                                     // hash -> bucket
-        this._ratelimits = {};                                  // bucket -> { remaining, reset } or global -> { reset }
+        this._buckets = {};             // hash -> bucket
+        this._resets = {};              // bucket -> reset
 
-        this._requester = Bornite.custom({                      // Custom bornite instance
+        this._requester = Bornite.custom({
             baseUrl: internals.baseUrl,
             validateStatus: internals.validateStatus,
             headers: {
@@ -26,81 +27,109 @@ module.exports = internals.Api = class {
         });
     }
 
-    request(builder, params, options) {
+    get(...args) {
 
-        const now = Date.now();
+        return this.request('get', ...args);
+    }
+
+    post(...args) {
+
+        return this.request('post', ...args);
+    }
+
+    put(...args) {
+
+        return this.request('put', ...args);
+    }
+
+    patch(...args) {
+
+        return this.request('patch', ...args);
+    }
+
+    delete(...args) {
+
+        return this.request('delete', ...args);
+    }
+
+    request(method, builder, params, options) {
+
+        Bone.assert(typeof method === 'string', 'Method must be a string');
+        Bone.assert(typeof builder === 'function' || typeof builder === 'string', 'Path builder must be a string or a function');
+        Bone.assert(typeof builder !== 'function' || typeof params === 'object', 'Path builder must be accompanied by parameters of type object');
 
         // Global ratelimit
 
-        const ratelimit = this._ratelimits[internals.global];
-        if (ratelimit &&
-            ratelimit.reset > now) {
-
-            return internals.defer(this.request(builder, params, options), ratelimit.reset - now);
+        const retryAfter = this._retryAfter(internals.global);
+        if (retryAfter) {
+            return internals.defer(this.request(builder, params, options), retryAfter);
         }
 
-        delete this._ratelimits[internals.global];
-
         if (typeof builder === 'string') {
-            return this._request(builder, builder, options);
+            return this._request(builder, builder, { ...params, method });         // Params is options when builder is a string
         }
 
         const path = builder(params);
-        const hash = internals.hash(builder, params);
+        const hash = internals.hash(method, builder, params);
 
-        return this._request(path, hash, options);
+        return this._request(path, hash, { ...options, method });
     }
 
     async _request(path, hash, options) {
 
-        let now = Date.now();
-        let bucket = this._buckets[hash];
-
         // Route-based ratelimit
 
-        const ratelimit = this._ratelimits[bucket];
-        if (ratelimit &&
-            !ratelimit.remaining &&
-            ratelimit.reset > now) {
-
-            return internals.defer(this._request(path, hash, options), ratelimit.reset - now);
+        let retryAfter = this._retryAfter(this._buckets[hash]);
+        if (retryAfter) {
+            return internals.defer(this._request(path, hash, options), retryAfter);
         }
 
-        delete this._ratelimits[bucket];
-
-        // Make request
-
         const response = await this._requester.request(path, options);
+        const now = Date.now();
 
-        now = Date.now();
-        bucket = response.headers['x-ratelimit-bucket'];
-
-        // Populate rate limits
-
+        const bucket = response.headers['x-ratelimit-bucket'];
         if (bucket) {
             const reset = Number(response.headers['x-ratelimit-reset']) * 1000;
-            if (reset > now) {
+            const remaining = Number(response.headers['x-ratelimit-remaining']);
+
+            if (reset > now &&
+                !remaining) {
+
                 this._buckets[hash] = bucket;
-                this._ratelimits[bucket] = {
-                    remaining: Number(response.headers['x-ratelimit-remaining']),
-                    reset,
-                };
+                this._resets[bucket] = reset;
             }
         }
 
         // Defer if 429 is encountered
 
         if (response.statusCode === 429) {
-            const ms = Number(response.headers['retry-after']) * 1000;
+            retryAfter = Number(response.headers['retry-after']) * 1000;
 
             if (response.headers['x-ratelimit-global']) {
-                this._ratelimits[internals.global] = { reset: now + ms };
+                this._ratelimits[internals.global] = { reset: now + retryAfter };
             }
 
-            return internals.defer(this._request(path, hash, options), ms);
+            return internals.defer(this._request(path, hash, options), retryAfter);
         }
 
         return response;
+    }
+
+    _retryAfter(bucket) {
+
+        const reset = this._resets[bucket];
+
+        if (!reset) {
+            return;
+        }
+
+        const retryAfter = reset - Date.now();
+        if (retryAfter <= 0) {
+            delete this._resets[bucket];
+            return;
+        }
+
+        return retryAfter;
     }
 };
 
@@ -109,7 +138,7 @@ internals.validateStatus = function (code) {
     return code === 429 || (code >= 200 && code < 300);
 };
 
-internals.hash = function (builder, params) {
+internals.hash = function (method, builder, params) {
 
     const processed = {};
     for (const param of Object.keys(params)) {
@@ -123,10 +152,10 @@ internals.hash = function (builder, params) {
         processed[param] = 'EXCLUDED';
     }
 
-    return builder(processed);
+    return `${method.toUpperCase()} ${builder(processed)}`;
 };
 
-internals.defer = function (operation, ms) {
+internals.defer = function (operation, retryAfter) {
 
     return new Promise((resolve, reject) => {
 
@@ -138,18 +167,6 @@ internals.defer = function (operation, ms) {
             catch (error) {
                 reject(error);
             }
-        }, ms);
+        }, retryAfter);
     });
 };
-
-internals.setup = function () {
-
-    for (const method of ['get', 'post', 'put', 'patch', 'delete']) {
-        internals.Api.prototype[method] = function (path, options) {
-
-            return this.request(method, path, options);
-        };
-    }
-};
-
-internals.setup();
