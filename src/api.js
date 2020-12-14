@@ -14,42 +14,9 @@ const internals = {
 module.exports = internals.Api = class {
     constructor(settings) {
 
+        this._settings = settings;
         this._buckets = {};             // hash -> bucket
         this._resets = {};              // bucket -> reset
-
-        this._requester = Bornite.custom({
-            baseUrl: internals.baseUrl,
-            validateStatus: internals.validateStatus,
-            headers: {
-                Authorization: `Bot ${settings.token}`,
-                'User-Agent': settings.userAgent || internals.userAgent,
-            },
-        });
-    }
-
-    get(...args) {
-
-        return this.request('get', ...args);
-    }
-
-    post(...args) {
-
-        return this.request('post', ...args);
-    }
-
-    put(...args) {
-
-        return this.request('put', ...args);
-    }
-
-    patch(...args) {
-
-        return this.request('patch', ...args);
-    }
-
-    delete(...args) {
-
-        return this.request('delete', ...args);
     }
 
     request(method, builder, params, options) {
@@ -60,9 +27,9 @@ module.exports = internals.Api = class {
 
         // Global ratelimit
 
-        const retryAfter = this._retryAfter(internals.global);
-        if (retryAfter) {
-            return internals.defer(this.request(builder, params, options), retryAfter);
+        const deferTime = this._calculateDeferTime(internals.global);
+        if (deferTime) {
+            return internals.defer(this.request(builder, params, options), deferTime);
         }
 
         if (typeof builder === 'string') {
@@ -79,13 +46,23 @@ module.exports = internals.Api = class {
 
         // Route-based ratelimit
 
-        let retryAfter = this._retryAfter(this._buckets[hash]);
-        if (retryAfter) {
-            return internals.defer(this._request(path, hash, options), retryAfter);
+        const deferTime = this._calculateDeferTime(hash);
+        if (deferTime) {
+            return internals.defer(this._request(path, hash, options), deferTime);
         }
 
-        const response = await this._requester.request(path, options);
+        const response = await Bornite.request(path, {
+            baseUrl: internals.baseUrl,
+            validateStatus: internals.validateStatus,
+            headers: {
+                Authorization: `Bot ${this._settings.token}`,
+                'User-Agent': this._settings.userAgent || internals.userAgent,
+            },
+        });
+
         const now = Date.now();
+
+        // Add resets
 
         const bucket = response.headers['x-ratelimit-bucket'];
         if (bucket) {
@@ -103,10 +80,10 @@ module.exports = internals.Api = class {
         // Defer if 429 is encountered
 
         if (response.statusCode === 429) {
-            retryAfter = Number(response.headers['retry-after']) * 1000;
+            const retryAfter = Number(response.headers['retry-after']) * 1000;
 
             if (response.headers['x-ratelimit-global']) {
-                this._ratelimits[internals.global] = { reset: now + retryAfter };
+                this._resets[internals.global] = now + retryAfter;
             }
 
             return internals.defer(this._request(path, hash, options), retryAfter);
@@ -115,7 +92,13 @@ module.exports = internals.Api = class {
         return response;
     }
 
-    _retryAfter(bucket) {
+    _calculateDeferTime(hash) {
+
+        const bucket = hash === internals.global ? hash : this._buckets[hash];
+
+        if (!bucket) {
+            return;
+        }
 
         const reset = this._resets[bucket];
 
@@ -123,15 +106,27 @@ module.exports = internals.Api = class {
             return;
         }
 
-        const retryAfter = reset - Date.now();
-        if (retryAfter <= 0) {
+        const deferTime = reset - Date.now();
+        if (deferTime <= 0) {
             delete this._resets[bucket];
             return;
         }
 
-        return retryAfter;
+        return deferTime;
     }
 };
+
+internals.setup = function () {
+
+    for (const method of ['get', 'post', 'put', 'patch', 'delete']) {
+        internals.Api.prototype[method] = function (...args) {
+
+            return this.request(method, ...args);
+        };
+    }
+};
+
+internals.setup();
 
 internals.validateStatus = function (code) {
 
@@ -155,7 +150,7 @@ internals.hash = function (method, builder, params) {
     return `${method.toUpperCase()} ${builder(processed)}`;
 };
 
-internals.defer = function (operation, retryAfter) {
+internals.defer = function (operation, ms) {
 
     return new Promise((resolve, reject) => {
 
@@ -167,6 +162,6 @@ internals.defer = function (operation, retryAfter) {
             catch (error) {
                 reject(error);
             }
-        }, retryAfter);
+        }, ms);
     });
 };
