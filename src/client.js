@@ -65,9 +65,7 @@ internals.Client = class {
         }
 
         const response = await this.api.get('/gateway');
-        const url = response.payload.url;
-
-        const gateway = Quartz.client(url, this._settings.gateway);
+        const gateway = Quartz.client(response.payload.url, this._settings.gateway);
         this.gateway = gateway;
 
         gateway.onDispatch = (event, data) => {
