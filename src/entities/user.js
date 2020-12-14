@@ -4,13 +4,7 @@ const BitField = require('../bitfield');
 const Cdn = require('../cdn');
 
 const internals = {
-    subcriptions: {                 // https://discord.com/developers/docs/resources/user#user-object-premium-types
-        0: 'NONE',
-        1: 'NITRO_CLASSIC',
-        2: 'NITRO',
-    },
-
-    flags: {
+    flags: {                    // https://discord.com/developers/docs/resources/user#user-object-user-flags
         NONE: 0,
         DISCORD_EMPLOYEE: 1 << 0,
         PARTNERED_SERVER_OWNER: 1 << 1,
