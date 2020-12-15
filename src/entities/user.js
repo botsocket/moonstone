@@ -46,9 +46,7 @@ internals.User = class {
         this.avatar = data.avatar;
         this.bot = Boolean(data.bot);
         this.system = Boolean(data.system);
-        this.locale = data.locale || null;
-        this.flags = data.flags !== undefined ? BitField.decode(data.flags, internals.flags) : null;
-        this.publicFlags = data.public_flags !== undefined ? BitField.decode(data.public_flags, internals.flags) : null;
+        this.flags = data.public_flags !== undefined ? BitField.decode(data.public_flags, internals.flags) : null;
     }
 
     defaultAvatarUrl(options) {
@@ -84,5 +82,20 @@ internals.ClientUser = class extends internals.User {
 
         this.verified = Boolean(this.verified);
         this.mfaEnabled = Boolean(data.mfa_enabled);
+    }
+
+    modify(data) {
+
+        return this.client.api.patch('/user/@me', { payload: data });
+    }
+
+    setUsername(username) {
+
+        return this.modify({ username });
+    }
+
+    setAvatar(avatar) {
+
+        return this.modify({ avatar });
     }
 };
