@@ -3,12 +3,12 @@
 module.exports = {
     root: true,
     env: {
-        es6: true,
+        es2020: true,
         node: true,
         jest: true,
     },
     parserOptions: {
-        ecmaVersion: 9,
+        ecmaVersion: 11,
     },
     plugins: ['@hapi/eslint-plugin-hapi'],
     rules: {
