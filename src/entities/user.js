@@ -1,5 +1,6 @@
 'use strict';
 
+const Utils = require('../utils');
 const BitField = require('../bitfield');
 const Cdn = require('../cdn');
 
@@ -35,18 +36,26 @@ internals.User = class {
     constructor(client, data) {
 
         this.client = client;
+
+        this.id = data.id;
+        this.createdAt = Utils.idToDate(data.id);
+
         this._update(data);
     }
 
     _update(data) {
 
-        this.id = data.id;
         this.username = data.username;
         this.discriminator = data.discriminator;
         this.avatar = data.avatar;
         this.bot = Boolean(data.bot);
         this.system = Boolean(data.system);
         this.flags = data.public_flags !== undefined ? BitField.decode(data.public_flags, internals.flags) : null;
+    }
+
+    toString() {
+
+        return `<@${this.id}>`;
     }
 
     defaultAvatarUrl(options) {
