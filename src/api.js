@@ -14,9 +14,17 @@ const internals = {
 module.exports = internals.Api = class {
     constructor(settings) {
 
-        this._settings = settings;
         this._buckets = {};             // hash -> bucket
         this._resets = {};              // bucket -> reset
+
+        this._requester = Bornite.custom({
+            baseUrl: internals.baseUrl,
+            validateStatus: internals.validateStatus,
+            headers: {
+                Authorization: `Bot ${settings.token}`,
+                'User-Agent': settings.userAgent || internals.userAgent,
+            },
+        });
     }
 
     request(method, builder, params, options) {
@@ -51,15 +59,7 @@ module.exports = internals.Api = class {
             return internals.defer(this._request(path, hash, options), deferTime);
         }
 
-        const response = await Bornite.request(path, {
-            baseUrl: internals.baseUrl,
-            validateStatus: internals.validateStatus,
-            headers: {
-                Authorization: `Bot ${this._settings.token}`,
-                'User-Agent': this._settings.userAgent || internals.userAgent,
-            },
-        });
-
+        const response = await this._requester.request(path, options);
         const now = Date.now();
 
         // Add resets
