@@ -18,13 +18,7 @@ module.exports = class {
 
     ready(data) {
 
-        if (this.client.user) {
-            this.client.user._update(data);
-        }
-        else {
-            this.client.user = User.generate(this.client, data);
-        }
-
+        this.client.user = User.generate(this.client, data);
         this.events.emit('ready');
     }
 
