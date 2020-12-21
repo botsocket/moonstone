@@ -6,7 +6,7 @@ const Quartz = require('@botsocket/quartz');
 const Ruby = require('@botsocket/ruby');
 
 const Api = require('./api');
-const Dispatcher = require('./dispatcher');
+const Dispatchers = require('./dispatchers');
 const Settings = require('./settings');
 
 const internals = {};
@@ -22,6 +22,7 @@ internals.Client = class {
         this._settings = internals.settings(options);
 
         this._commands = Ruby.registry(this._settings.commands);
+        this._dispatchers = new Dispatchers(this);
         this.api = new Api(this._settings.api);
         this.gateway = null;
         this.events = new Events.EventEmitter();
@@ -70,7 +71,10 @@ internals.Client = class {
 
         gateway.onDispatch = (event, data) => {
 
-            Dispatcher.dispatch(this, event, data);
+            const method = internals.event(event);              // Normalize event name to camelCase
+            if (this._dispatchers[method]) {
+                this._dispatchers[method](data);
+            }
         };
 
         return gateway.connect();
@@ -104,4 +108,14 @@ internals.settings = function (options) {
     }
 
     return settings;
+};
+
+internals.event = function (event) {
+
+    return event
+        .toLowerCase()
+        .replace(/_([a-z])/g, (_, char) => {
+
+            return char.toUpperCase();
+        });
 };

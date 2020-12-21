@@ -1,5 +1,7 @@
 'use strict';
 
+const Bone = require('@botsocket/bone');
+
 const Utils = require('../utils');
 const BitField = require('../bitfield');
 const Cdn = require('../cdn');
@@ -32,7 +34,7 @@ exports.generate = function (client, data) {
     return new internals.User(client, data);
 };
 
-internals.User = class {
+internals.BaseUser = class {
     constructor(client, data) {
 
         this.client = client;
@@ -76,15 +78,51 @@ internals.User = class {
 
         return this.avatarUrl(options) || this.defaultAvatarUrl(options);
     }
+};
 
-    async createDm() {
+internals.User = class extends internals.BaseUser {
+    constructor(client, data) {
+
+        super(client, data);
+
+        this._dmChannel = null;
+    }
+
+    async createDmChannel() {
+
+        if (this._dmChannel) {
+            return this._dmChannel;
+        }
+
+        for (const channel of this.client.channels.values()) {
+            if (channel.type === 'DM' &&
+                channel._recipientId === this.id) {
+
+                this._dmChannel = channel;
+                return channel;
+            }
+        }
 
         const response = await this.client.api.post('/users/@me/channels', { payload: { recipient_id: this.id } });
-        return response.payload;
+
+        const channel = this.client._dispatchers.channelCreate(response.payload);
+        this._dmChannel = channel;
+        return channel;
+    }
+
+    async closeDmChannel() {
+
+        if (!this._dmChannel) {
+            return;
+        }
+
+        const channel = await this._dmChannel.delete();
+        this._dmChannel = null;
+        this.client._dispatchers.channelDelete(channel);
     }
 };
 
-internals.ClientUser = class extends internals.User {
+internals.ClientUser = class extends internals.BaseUser {
     _update(data) {
 
         super._update(data.user);
@@ -99,6 +137,8 @@ internals.ClientUser = class extends internals.User {
     }
 
     setUsername(username) {
+
+        Bone.assert(typeof username === 'string', 'Username must be a string');
 
         return this.modify({ username });
     }

@@ -4,41 +4,7 @@ const Utils = require('../utils');
 const BitField = require('../bitfield');
 
 const internals = {
-    permissions: {
-        CREATE_INSTANT_INVITE: 1 << 0,
-        KICK_MEMBERS: 1 << 1,
-        BAN_MEMBERS: 1 << 2,
-        ADMINISTRATOR: 1 << 3,
-        MANAGE_CHANNELS: 1 << 4,
-        MANAGE_GUILD: 1 << 5,
-        ADD_REACTIONS: 1 << 6,
-        VIEW_AUDIT_LOG: 1 << 7,
-        PRIORITY_SPEAKER: 1 << 8,
-        STREAM: 1 << 9,
-        VIEW_CHANNEL: 1 << 10,
-        SEND_MESSAGES: 1 << 11,
-        SEND_TTS_MESSAGES: 1 << 12,
-        MANAGE_MESSAGES: 1 << 13,
-        EMBED_LINKS: 1 << 14,
-        ATTACH_FILES: 1 << 15,
-        READ_MESSAGE_HISTORY: 1 << 16,
-        MENTION_EVERYONE: 1 << 17,
-        USE_EXTERNAL_EMOJIS: 1 << 18,
-        VIEW_GUILD_INSIGHTS: 1 << 19,
-        CONNECT: 1 << 20,
-        SPEAK: 1 << 21,
-        MUTE_MEMBERS: 1 << 22,
-        DEAFEN_MEMBERS: 1 << 23,
-        MOVE_MEMBERS: 1 << 24,
-        USE_VAD: 1 << 25,
-        CHANGE_NICKNAME: 1 << 26,
-        MANAGE_NICKNAMES: 1 << 27,
-        MANAGE_ROLES: 1 << 28,
-        MANAGE_WEBHOOKS: 1 << 29,
-        MANAGE_EMOJIS: 1 << 30,
-    },
-
-    types: {
+    types: {                    // https://discord.com/developers/docs/resources/channel#channel-object-channel-types
         0: 'GuildText',
         1: 'Dm',
         2: 'GuildVoice',
@@ -48,10 +14,10 @@ const internals = {
     },
 };
 
-exports.generate = function (client, data) {
+exports.generate = function (client, data, guild) {
 
     const type = internals.types[data.type];
-    return internals[type](client, data);
+    return internals[type](client, data, type, guild);
 };
 
 internals.BaseChannel = class {
@@ -75,68 +41,149 @@ internals.BaseChannel = class {
     }
 };
 
+internals.Dm = class extends internals.BaseChannel { };
+
 internals.GuildChannel = class extends internals.BaseChannel {
-    constructor(client, data, type) {
+    constructor(client, data, type, guild) {
 
         super(client, data, type);
 
-        this.guild = client.guilds.get(data.guild_id);
+        this.guild = guild || client.guilds.get(data.guild_id);
         this.overwrites = new Map();
+
         this._update(data);
     }
 
     _update(data) {
 
         this.name = data.name;
-        this.nsfw = Boolean(data.nsfw);
-        this.parent = data.parent_id ? this.client.channels.get(data.parent_id) : null;
 
         // Permission overwrites
 
-        if (data.permission_overwrites) {
-            for (const overwrite of data.permission_overwrites) {
-                this.overwrites.set(overwrite.id, internals.overwrite(overwrite));
+        for (const overwrite of data.permission_overwrites) {
+            const allowBits = Number(overwrite.allow);
+            const denyBits = Number(overwrite.deny);
+
+            const entry = {
+                allow: BitField.decode(allowBits, Utils.permissions),
+                deny: BitField.decode(denyBits, Utils.permissions),
+                _allowBits: allowBits,
+                _denyBits: denyBits,
+            };
+
+            this.overwrites.set(overwrite.id, entry);
+
+            if (data.type) {
+                entry.member = this.guild.members.get(data.id);
+            }
+            else {
+                entry.role = this.guild.roles.get(data.id);
             }
         }
     }
 
     modify(data) {
 
+        if (data.overwrites) {
+            data.permission_overwrites = data.overwrites;
+            delete data.overwrites;
+        }
+
         return this.client.api.patch((params) => `/channels/${params.channel}`, { channel: this.id }, { payload: data });
     }
 };
 
-internals.overwrite = function (overwrite) {
+internals.GuildCategory = class extends internals.GuildChannel { };
 
-    return {
-        id: overwrite.id,
-        type: overwrite.type ? 'member' : 'role',
-        allow: BitField.decode(overwrite.allow, internals.permissions),
-        deny: BitField.decode(overwrite.deny, internals.permissions),
-    };
-};
-
-internals.GuildText = class extends internals.GuildChannel {
-    constructor(client, data) {
-
-        super(client, data, 'text');
-    }
-
+internals.GuildSingleChannel = class extends internals.GuildChannel {
     _update(data) {
 
         super._update(data);
 
-        this.topic = data.topic || null;
-        this.slowmodeInterval = data.rate_limit_per_user;
+        this.nsfw = Boolean(data.nsfw);
+        this.categoryId = data.parent_id;
+
+        // Lazy loaded
+
+        this._category = null;
+    }
+
+    get category() {
+
+        if (!this._categoryId) {
+            return null;
+        }
+
+        if (this._category) {
+            return this._category;
+        }
+
+        const category = this.client.channels.get(this._categoryId);
+        this._category = category;
+        return category;
+    }
+
+    syncPermissions() {
+
+        if (!this.category) {
+            return;
+        }
+
+        const overwrites = [];
+        for (const [id, overwrite] of this.category.overwrites) {
+            overwrites.push({
+                id,
+                type: overwrite.member ? 1 : 0,
+                allow: String(overwrite._allowBits),
+                deny: String(overwrite._denyBits),
+            });
+        }
+
+        return this.modify({ overwrites });
+    }
+
+    get permissionsSynced() {
+
+        if (!this.category) {
+            return false;
+        }
+
+        if (this.overwrites.size !== this.category.overwrites.size) {
+            return false;
+        }
+
+        for (const [id, categoryOverwrite] of this.category.overwrites) {
+            const overwrite = this.overwrites.get(id);
+
+            if (!overwrite) {
+                return false;
+            }
+
+            if (overwrite._allowBits !== categoryOverwrite._allowBits ||
+                overwrite._denyBits !== categoryOverwrite._denyBits) {
+
+                return false;
+            }
+        }
+
+        return true;
     }
 };
 
-internals.GuildVoice = class extends internals.GuildChannel {
-    constructor(client, data) {
+internals.GuildText = class extends internals.GuildSingleChannel {
+    _update(data) {
 
-        super(client, data, 'voice');
+        super._update(data);
+
+        this.topic = data.topic;
+
+        if (this.type !== 'news') {
+            this.slowmodeInterval = data.rate_limit_per_user;
+        }
     }
+};
 
+internals.GuildVoice = class extends internals.GuildSingleChannel {
     _update(data) {
 
         super._update(data);
@@ -146,29 +193,6 @@ internals.GuildVoice = class extends internals.GuildChannel {
     }
 };
 
-internals.Dm = class extends internals.BaseChannel {
+internals.GuildNews = class extends internals.GuildText { };
 
-};
-
-internals.GuildCategory = class extends internals.GuildChannel {
-    constructor(client, data) {
-
-        super(client, data, 'category');
-    }
-};
-
-internals.GuildNews = class extends internals.GuildChannel {
-    constructor(client, data) {
-
-        super(client, data, 'news');
-    }
-
-    _update(data) {
-
-        super._update(data);
-
-        this.topic = data.topic || null;
-    }
-};
-
-internals.GuildStore = class extends internals.GuildChannel { };
+internals.GuildStore = class extends internals.GuildSingleChannel { };
