@@ -125,7 +125,7 @@ internals.User = class extends internals.BaseUser {
 internals.ClientUser = class extends internals.BaseUser {
     _update(data) {
 
-        super._update(data.user);
+        super._update(data);
 
         this.verified = Boolean(this.verified);
         this.mfaEnabled = Boolean(data.mfa_enabled);
