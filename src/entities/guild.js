@@ -50,7 +50,7 @@ module.exports = internals.Guild = class {
         this.voiceStates = new Map();
         this.channels = new Map();
         this.roles = new Map();
-        this.members = Map();
+        this.members = new Map();
         this._presences = new Map();
 
         this._update(data);

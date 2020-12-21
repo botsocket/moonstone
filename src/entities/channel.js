@@ -17,7 +17,7 @@ const internals = {
 exports.generate = function (client, data, guild) {
 
     const type = internals.types[data.type];
-    return internals[type](client, data, type, guild);
+    return new internals[type](client, data, type, guild);
 };
 
 internals.BaseChannel = class {
